@@ -1,0 +1,9 @@
+﻿ConnectionStrings:
+  DefaultConnection: "Data Source=equipment.db"
+
+Logging:
+  LogLevel:
+    Default: "Information"
+    Microsoft.AspNetCore: "Warning"
+
+AllowedHosts: "*"

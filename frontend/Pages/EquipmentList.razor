@@ -1,0 +1,166 @@
+﻿@using Services
+@using shared
+@using Radzen;
+
+@page "/"
+@layout MainLayout
+@inject IEquipmentService EquipmentService
+@inject NotificationService NotificationService
+@inject ILogger<EquipmentList> Logger
+
+<h3>Equipment List</h3>
+
+@if (equipmentList == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <RadzenDataGrid Data="@equipmentList" TItem="Equipment">
+        <Columns>
+            <RadzenDataGridColumn TItem="Equipment" Property="Name" Title="Name" />
+            <RadzenDataGridColumn TItem="Equipment" Title="Current State">
+                <Template Context="equipment">
+                    <span style="color:@GetColor(equipment.CurrentState)">
+                        @equipment.CurrentState
+                    </span>
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="Equipment" Title="Change State">
+                <Template Context="equipment">
+                    <RadzenDropDown TValue="EquipmentState" @bind-Value="equipment.CurrentState" Data="@stateOptions" TextProperty="StateName" ValueProperty="Value"
+                                    Style="width:100%" Change="@(args => OnStateChangedAsync(equipment))" />
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
+    </RadzenDataGrid>
+}
+
+@if (isReconnecting)
+{
+    <p><em>Reconnecting to live updates...</em></p>
+}
+
+@if (isDisconnected)
+{
+    <p class="text-danger"><em>Disconnected from live updates.</em></p>
+}
+
+@code {
+
+    private List<Equipment> equipmentList;
+    private bool isReconnecting;
+    private bool isDisconnected;
+    private List<EquipmentStateOption> stateOptions = Enum.GetValues<EquipmentState>()
+        .Select(state => new EquipmentStateOption { Value = state, StateName = state.ToString() })
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            equipmentList = await EquipmentService.GetEquipmentAsync();
+            SubscribeToEquipmentServiceEvents();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "error during initialization: {Message}", ex.Message);
+            ShowNotification("error loading equipment list.");
+        }
+    }
+
+    private void SubscribeToEquipmentServiceEvents()
+    {
+        EquipmentService.OnEquipmentStateUpdated += HandleEquipmentStateUpdated;
+        EquipmentService.OnReconnecting += HandleReconnecting;
+        EquipmentService.OnReconnected += HandleReconnected;
+        EquipmentService.OnClosed += HandleClosed;
+    }
+
+    private void UnsubscribeFromEquipmentServiceEvents()
+    {
+        EquipmentService.OnEquipmentStateUpdated -= HandleEquipmentStateUpdated;
+        EquipmentService.OnReconnecting -= HandleReconnecting;
+        EquipmentService.OnReconnected -= HandleReconnected;
+        EquipmentService.OnClosed -= HandleClosed;
+    }
+
+    private void HandleEquipmentStateUpdated(Equipment updatedEquipment)
+    {
+        var existingEquipment = equipmentList.FirstOrDefault(e => e.Id == updatedEquipment.Id);
+        if (existingEquipment != null)
+        {
+            existingEquipment.CurrentState = updatedEquipment.CurrentState;
+        }
+        else
+        {
+            equipmentList.Add(updatedEquipment);
+        }
+
+        ShowNotification($"equipment '{updatedEquipment.Name}' state has changed to {updatedEquipment.CurrentState}.");
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnStateChangedAsync(Equipment equipment)
+    {
+        try
+        {
+            await EquipmentService.UpdateEquipmentStateAsync(equipment.Id, equipment.CurrentState);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "error updating equipment state: {Message}", ex.Message);
+        }
+    }
+
+    private void ShowNotification(string message)
+    {
+        NotificationService.Notify(new NotificationMessage
+        {
+            Severity = NotificationSeverity.Info,
+            Summary = "Equipment State Changed",
+            Detail = message,
+            Duration = 4000
+        });
+    }
+
+    private void HandleReconnecting()
+    {
+        isReconnecting = true;
+        isDisconnected = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleReconnected()
+    {
+        isReconnecting = false;
+        isDisconnected = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleClosed()
+    {
+        isReconnecting = false;
+        isDisconnected = true;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private string GetColor(EquipmentState state) => state switch
+    {
+        EquipmentState.Red => "red",
+        EquipmentState.Yellow => "orange",
+        EquipmentState.Green => "green"
+    };
+
+    public void Dispose()
+    {
+        UnsubscribeFromEquipmentServiceEvents();
+    }
+
+    public class EquipmentStateOption
+    {
+        public EquipmentState Value { get; set; }
+        public string StateName { get; set; }
+    }
+}
