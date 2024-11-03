@@ -1,5 +1,6 @@
 ﻿*.rsuser
 *.suo
+*.vs
 *.user
 *.userosscache
 *.sln.docstates
@@ -56,3 +57,8 @@ ehthumbs.db
 Icon?
 Desktop.ini
 *.log
+**/Migrations/
+obj/
+.vs/Lego/xs/
+equipment.db-shm
+equipment.db-wal
